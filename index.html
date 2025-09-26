@@ -140,6 +140,7 @@ let stations=[
 {id:14,name:'VinFast Chung cư The Eastern',lat:10.8255,lon:106.8075,slots:5,price:15},
 {id:15,name:'Trạm sạc Ava - Trường Thọ',lat:10.8490,lon:106.7530,slots:3,price:12}
 ];
+
 let bookings=JSON.parse(localStorage.getItem('ez_bookings')||'[]');
 let points=parseInt(localStorage.getItem('ez_points')||'0',10);
 let currentUser=JSON.parse(localStorage.getItem('ez_user')||'null');
@@ -213,10 +214,15 @@ document.getElementById('close-payment').addEventListener('click',()=>{
 document.getElementById('confirm-payment').addEventListener('click',()=>{
   if(!pendingStation) return;
   let st=pendingStation;
+  if(st.slots<=0){ alert('Hết chỗ trống!'); return; }
   st.slots--;
+  
   let price=st.price;
   const code=document.getElementById('promo-code').value.trim();
-  if(code==="ENERZO50") price=price/2;
+  if(code==="ENERZO20") price = price * 0.8;
+  else if(code==="CDLOGT28GH") price = price * 0.5;
+  else if(code==="7SHARKS") price = price * 0.3;
+
   const method=document.getElementById('payment-method').value;
   const expireTime = Date.now() + 30*60*1000; // 30 phút
   bookings.push({
@@ -228,25 +234,36 @@ document.getElementById('confirm-payment').addEventListener('click',()=>{
     date: new Date().toLocaleString(),
     expire: expireTime
   });
-  points+=5;
+
+  points += 5; // nhận 5 điểm khi đặt chỗ
   localStorage.setItem('ez_bookings',JSON.stringify(bookings));
-  localStorage.setItem('ez_points',points);
+  localStorage.setItem('ez_points', points);
   updateUI(); renderBookings(); renderStations();
+
   document.getElementById('payment-modal').style.display='none';
   pendingStation=null;
   alert(`Đặt chỗ thành công tại ${st.name}! Thanh toán bằng ${method}.`);
 });
+
+// ===== Hủy đặt chỗ =====
 function cancelBooking(id){
   const idx=bookings.findIndex(b=>b.id===id);
   if(idx!==-1){
     const st=stations.find(s=>s.name===bookings[idx].station);
     if(st) st.slots++;
     bookings.splice(idx,1);
+
+    // Trừ điểm khi hủy
+    points = Math.max(0, points - 5);
+    localStorage.setItem('ez_points', points);
+
     localStorage.setItem('ez_bookings',JSON.stringify(bookings));
-    renderBookings(); renderStations();
-    alert("Đã hủy đặt chỗ!");
+    updateUI(); renderBookings(); renderStations();
+    alert("Đã hủy đặt chỗ! 5 điểm bị trừ.");
   }
 }
+
+// ===== Xóa các đặt chỗ hết hạn =====
 function cleanExpiredBookings(){
   const now=Date.now();
   let changed=false;
@@ -265,6 +282,8 @@ function cleanExpiredBookings(){
   }
 }
 setInterval(cleanExpiredBookings,60000);
+
+// ===== Render đặt chỗ =====
 function renderBookings(){
   const list=document.getElementById('bookings-list');
   list.innerHTML='';
@@ -286,7 +305,7 @@ function renderBookings(){
   });
 }
 
-// ===== Station rendering =====
+// ===== Render trạm sạc =====
 function renderStations(){
   document.getElementById('stations-list').innerHTML='';
   map.eachLayer(l=>{if(l instanceof L.Marker && !l._isTile) map.removeLayer(l);});
@@ -320,10 +339,7 @@ function locateUser(auto=false){
       L.circle([latitude,longitude],{radius:50,color:'blue'}).addTo(map).bindPopup('Bạn đang ở đây').openPopup();
       renderStations();
     }, err=>{
-      if(auto){ // fallback
-        map.setView([10.8546,106.7840],13);
-        renderStations();
-      }
+      if(auto){ map.setView([10.8546,106.7840],13); renderStations(); }
       console.warn("Không lấy được GPS:",err.message);
     });
   }
@@ -351,6 +367,3 @@ window.addEventListener('load',()=>{
   renderStations(); renderBookings();
 });
 </script>
-
-</body>
-</html>
