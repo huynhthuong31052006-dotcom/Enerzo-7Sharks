@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Enerzo – Tìm trạm sạc nhanh chóng</title>
+<title>Enerzo – Sạc nhanh mọi lúc</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
 <style>
 :root { --brand:#15803d; --accent:#10b981; }
 body { font-family:Inter, sans-serif; margin:0; background:#f3f4f6; color:#0f172a; }
@@ -39,7 +40,7 @@ footer.nav button.active { color:#0f172a; }
 </head>
 <body>
 <header>
-<div class="title">Enerzo – Tìm trạm sạc nhanh chóng</div>
+<div class="title">Enerzo – Sạc nhanh mọi lúc</div>
 <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
 <div class="small" style="color:rgba(255,255,255,0.9)">⭐ <span id="points-badge">0</span> điểm</div>
 <button id="login-btn" class="btn ghost">Đăng nhập</button>
@@ -70,6 +71,7 @@ footer.nav button.active { color:#0f172a; }
 <p>Nhập mã <b>ENERZO20</b> để giảm 20% khi đặt chỗ.</p>
 <P>Nhập mã <b>CDLOGT28GH</b> để giảm 50% khi đặt chỗ.</P>
 <p>Nhập mã <b>7SHARKS</b> để giảm 70% khi đặt chỗ.</p>
+<p>Nhập mã <b>THSNGOCTHUY</b> để giảm 50% khi đặt chỗ.</p>
 </div>
 </section>
 <section id="points" class="section">
@@ -122,7 +124,9 @@ footer.nav button.active { color:#0f172a; }
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
 <script>
+// ===== Dữ liệu trạm sạc =====
 let stations=[
 {id:1,name:'VinFast - Thủ Đức',lat:10.8546,lon:106.7840,slots:4,price:15},
 {id:2,name:'EVN Station - Q9',lat:10.8375,lon:106.7768,slots:2,price:12},
@@ -146,6 +150,7 @@ let points=parseInt(localStorage.getItem('ez_points')||'0',10);
 let currentUser=JSON.parse(localStorage.getItem('ez_user')||'null');
 let pendingStation=null;
 let userLocation=null;
+let routingControl = null;
 
 const loginBtn=document.getElementById('login-btn');
 const logoutBtn=document.getElementById('logout-btn');
@@ -168,7 +173,7 @@ updateUI();
 // ===== Modal login =====
 loginBtn.addEventListener('click',()=>{ document.getElementById('login-modal').style.display='flex'; });
 document.getElementById('close-login').addEventListener('click',()=>{ document.getElementById('login-modal').style.display='none'; });
-document.getElementById('submit-login').addEventListener('click',()=>{
+document.getElementById('submit-login').addEventListener('click',()=> {
   const name=document.getElementById('login-name').value.trim();
   const email=document.getElementById('login-email').value.trim();
   if(name && email){
@@ -179,12 +184,7 @@ document.getElementById('submit-login').addEventListener('click',()=>{
     alert('Đăng nhập thành công!');
   } else alert('Vui lòng nhập đủ tên và email!');
 });
-logoutBtn.addEventListener('click',()=>{
-  currentUser=null;
-  localStorage.removeItem('ez_user');
-  updateUI();
-  alert('Đã đăng xuất!');
-});
+logoutBtn.addEventListener('click',()=>{ currentUser=null; localStorage.removeItem('ez_user'); updateUI(); alert('Đã đăng xuất!'); });
 
 // ===== Map init =====
 const map=L.map('map').setView([10.8546,106.7840],13);
@@ -207,11 +207,8 @@ window.bookFromMap = function(id){
   pendingStation=st;
   document.getElementById('payment-modal').style.display='flex';
 }
-document.getElementById('close-payment').addEventListener('click',()=>{
-  document.getElementById('payment-modal').style.display='none';
-  pendingStation=null;
-});
-document.getElementById('confirm-payment').addEventListener('click',()=>{
+document.getElementById('close-payment').addEventListener('click',()=>{ document.getElementById('payment-modal').style.display='none'; pendingStation=null; });
+document.getElementById('confirm-payment').addEventListener('click',()=> {
   if(!pendingStation) return;
   let st=pendingStation;
   if(st.slots<=0){ alert('Hết chỗ trống!'); return; }
@@ -225,17 +222,9 @@ document.getElementById('confirm-payment').addEventListener('click',()=>{
 
   const method=document.getElementById('payment-method').value;
   const expireTime = Date.now() + 30*60*1000; // 30 phút
-  bookings.push({
-    id: Date.now(),
-    station: st.name,
-    price: price,
-    method: method,
-    status:"Đã thanh toán",
-    date: new Date().toLocaleString(),
-    expire: expireTime
-  });
+  bookings.push({ id: Date.now(), station: st.name, price: price, method: method, status:"Đã thanh toán", date: new Date().toLocaleString(), expire: expireTime });
 
-  points += 5; // nhận 5 điểm khi đặt chỗ
+  points += 5;
   localStorage.setItem('ez_bookings',JSON.stringify(bookings));
   localStorage.setItem('ez_points', points);
   updateUI(); renderBookings(); renderStations();
@@ -252,11 +241,8 @@ function cancelBooking(id){
     const st=stations.find(s=>s.name===bookings[idx].station);
     if(st) st.slots++;
     bookings.splice(idx,1);
-
-    // Trừ điểm khi hủy
     points = Math.max(0, points - 5);
     localStorage.setItem('ez_points', points);
-
     localStorage.setItem('ez_bookings',JSON.stringify(bookings));
     updateUI(); renderBookings(); renderStations();
     alert("Đã hủy đặt chỗ! 5 điểm bị trừ.");
@@ -292,27 +278,19 @@ function renderBookings(){
     const remain = Math.max(0, Math.floor((b.expire-Date.now())/60000));
     const item=document.createElement('div');
     item.className='booking-item';
-    item.innerHTML=`
-      <div>
-        <b>${b.station}</b><br>
-        <span class="booking-meta">${b.date} — còn ${remain} phút<br>
-        Giá: ${b.price}k VND — ${b.status} (${b.method})</span>
-      </div>
-      <button class="btn ghost">Hủy</button>
-    `;
+    item.innerHTML=`<div><b>${b.station}</b><br><span class="booking-meta">${b.date} — còn ${remain} phút<br>Giá: ${b.price}k VND — ${b.status} (${b.method})</span></div><button class="btn ghost">Hủy</button>`;
     item.querySelector('button').addEventListener('click',()=>cancelBooking(b.id));
     list.appendChild(item);
   });
 }
 
-// ===== Render trạm sạc =====
+// ===== Render trạm sạc với chỉ đường =====
 function renderStations(){
   document.getElementById('stations-list').innerHTML='';
   map.eachLayer(l=>{if(l instanceof L.Marker && !l._isTile) map.removeLayer(l);});
   let sortedStations=[...stations];
   if(userLocation){
-    sortedStations.sort((a,b)=>distance(userLocation.lat,userLocation.lon,a.lat,a.lon)-
-                              distance(userLocation.lat,userLocation.lon,b.lat,b.lon));
+    sortedStations.sort((a,b)=>distance(userLocation.lat,userLocation.lon,a.lat,a.lon)-distance(userLocation.lat,userLocation.lon,b.lat,b.lon));
   }
   sortedStations.forEach(st=>{
     const item=document.createElement('div');
@@ -324,8 +302,28 @@ function renderStations(){
     item.innerHTML=`<div><b>${st.name}</b><br><span class='station-meta'>${st.slots} chỗ trống — ${st.price}k VND${extra}</span></div><button class='btn'>Đặt</button>`;
     item.querySelector('button').addEventListener('click',()=>bookFromMap(st.id));
     document.getElementById('stations-list').appendChild(item);
+
     const marker=L.marker([st.lat,st.lon]).addTo(map);
-    marker.bindPopup(`<b>${st.name}</b><br>${st.slots} chỗ trống — ${st.price}k VND<br><button class='btn' onclick='bookFromMap(${st.id})'>Đặt chỗ</button>`);
+    marker.bindPopup(`<b>${st.name}</b><br>${st.slots} chỗ trống — ${st.price}k VND${extra}<br><button class='btn' onclick='bookFromMap(${st.id})'>Đặt chỗ</button><button class='btn ghost' onclick='routeToStationById(${st.id})'>Chỉ đường</button>`);
+  });
+}
+
+// ===== Chỉ đường =====
+function routeToStationById(id){
+  const st = stations.find(s=>s.id===id);
+  if(!st) return;
+  if(!userLocation){ alert("Vui lòng bật GPS trước!"); return; }
+  if(routingControl) map.removeControl(routingControl);
+  routingControl = L.Routing.control({
+    waypoints: [L.latLng(userLocation.lat,userLocation.lon), L.latLng(st.lat,st.lon)],
+    lineOptions:{ styles:[{color:'blue',opacity:0.6,weight:5}] },
+    addWaypoints:false, routeWhileDragging:false, draggableWaypoints:false, show:false
+  }).addTo(map);
+  routingControl.on('routesfound', e=>{
+    const route=e.routes[0];
+    const dist_km=(route.summary.totalDistance/1000).toFixed(1);
+    const time_min=Math.ceil(route.summary.totalTime/60);
+    alert(`Khoảng cách: ${dist_km} km\nThời gian ước tính: ${time_min} phút`);
   });
 }
 
@@ -338,10 +336,7 @@ function locateUser(auto=false){
       map.setView([latitude,longitude],15);
       L.circle([latitude,longitude],{radius:50,color:'blue'}).addTo(map).bindPopup('Bạn đang ở đây').openPopup();
       renderStations();
-    }, err=>{
-      if(auto){ map.setView([10.8546,106.7840],13); renderStations(); }
-      console.warn("Không lấy được GPS:",err.message);
-    });
+    }, err=>{ if(auto){ map.setView([10.8546,106.7840],13); renderStations(); } });
   }
 }
 document.getElementById('locate-btn').addEventListener('click',()=>locateUser(false));
@@ -355,15 +350,8 @@ function showSection(sectionId){
   document.getElementById(sectionId).classList.add('active');
   document.querySelector(`footer.nav button[data-target="${sectionId}"]`)?.classList.add('active');
 }
-document.querySelectorAll('footer.nav button').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    window.location.hash = btn.dataset.target;
-    showSection(btn.dataset.target);
-  });
-});
-window.addEventListener('load',()=>{
-  const hash = window.location.hash.replace('#','');
-  if(hash) showSection(hash);
-  renderStations(); renderBookings();
-});
+document.querySelectorAll('footer.nav button').forEach(btn=>{ btn.addEventListener('click',()=>{ window.location.hash=btn.dataset.target; showSection(btn.dataset.target); }); });
+window.addEventListener('load',()=>{ const hash=window.location.hash.replace('#',''); if(hash) showSection(hash); renderStations(); renderBookings(); });
 </script>
+</body>
+</html>
